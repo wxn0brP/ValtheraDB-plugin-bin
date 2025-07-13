@@ -4,8 +4,8 @@ import Data from "@wxn0brp/db-core/types/data";
 import FileCpu from "@wxn0brp/db-core/types/fileCpu";
 import { DbOpts } from "@wxn0brp/db-core/types/options";
 import { VQuery } from "@wxn0brp/db-core/types/query";
-import { compareSafe } from "@wxn0brp/db-core/utils/sort";
 import { BinManager } from "./bin";
+import { findUtil } from "@wxn0brp/db-core/utils/action";
 
 export class BinFileAction extends dbActionBase {
     folder: string;
@@ -71,36 +71,9 @@ export class BinFileAction extends dbActionBase {
     /**
      * Find entries in the specified database based on search criteria.
      */
-    async find({ collection, search, context = {}, dbFindOpts = {}, findOpts = {} }: VQuery) {
-        const {
-            reverse = false,
-            max = -1,
-            offset = 0,
-            sortBy,
-            sortAsc = true
-        } = dbFindOpts;
-
-        await this.checkCollection(arguments[0]);
-
-        let data = await this.fileCpu.find(collection, search, context, findOpts) as Data[];
-
-        if (reverse) data.reverse();
-
-        if (sortBy) {
-            const dir = sortAsc ? 1 : -1;
-            data.sort((a, b) => compareSafe(a[sortBy], b[sortBy]) * dir);
-        }
-
-        if (offset > 0) {
-            if (data.length <= offset) return [];
-            data = data.slice(offset);
-        }
-
-        if (max !== -1 && data.length > max) {
-            data = data.slice(0, max);
-        }
-
-        return data;
+    async find(query: VQuery) {
+        await this.checkCollection(query);
+        return await findUtil(query, this.fileCpu, [query.collection]);
     }
 
     /**
