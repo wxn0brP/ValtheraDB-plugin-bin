@@ -1,46 +1,45 @@
-import { FileHandle } from "fs/promises";
-import { CollectionMeta, Options } from ".";
+import { BinManager, CollectionMeta } from ".";
 import { findFreeSlot } from "./data";
-import { decodeData, encodeData } from "./format";
 import { HEADER_SIZE, VERSION } from "./static";
 import { detectCollisions, pushToFreeList, roundUpCapacity, writeData } from "./utils";
 import { getFileCrc } from "../crc32";
+import { _log } from "../log";
 
 export interface Block {
     offset: number;
     capacity: number;
 };
 
-export interface OpenFileResult {
+export interface FileMeta {
     collections: CollectionMeta[];
     freeList: Block[];
     fileSize: number;
     payloadLength: number;
     payloadOffset: number;
     blockSize: number;
-    options: Options;
 }
 
-export async function openFile(fd: FileHandle, options: Options) {
+export async function openFile(cmp: BinManager) {
+    const { fd, options } = cmp;
     const stats = await fd.stat();
     const fileSize = stats.size;
     await _log(2, "File size:", fileSize);
 
-    const result: OpenFileResult = {
+    const meta: FileMeta = {
         collections: [],
         freeList: [],
         fileSize,
         payloadLength: 0,
         payloadOffset: 0,
         blockSize: options.preferredSize ?? 256,
-        options
     }
+    cmp.meta = meta;
 
     if (fileSize < HEADER_SIZE) {
         await _log(2, "Initializing new file header");
-        await saveHeaderAndPayload(fd, result);
+        await saveHeaderAndPayload(cmp);
         await _log(6, "Header initialized with size:", HEADER_SIZE);
-        return result;
+        return meta;
     }
 
     const headerBuf = Buffer.alloc(HEADER_SIZE);
@@ -55,15 +54,15 @@ export async function openFile(fd: FileHandle, options: Options) {
     await _log(2, "File version:", version);
 
     const payloadLength = headerBuf.readUInt32LE(4);
-    result.payloadLength = payloadLength;
+    meta.payloadLength = payloadLength;
     await _log(6, "Payload length:", payloadLength);
 
     const payloadOffset = headerBuf.readUInt32LE(8);
-    result.payloadOffset = payloadOffset;
+    meta.payloadOffset = payloadOffset;
     await _log(6, "Payload offset:", payloadOffset);
 
     const blockSize = headerBuf.readUInt32LE(12);
-    result.blockSize = blockSize;
+    meta.blockSize = blockSize;
     await _log(2, "Block size:", blockSize);
 
     if (options.crc) {
@@ -87,16 +86,16 @@ export async function openFile(fd: FileHandle, options: Options) {
 
     if (payloadLength === 0) {
         await _log(6, "Empty payload, initializing collections and freeList");
-        return result;
+        return meta;
     }
 
-    await readHeaderPayload(fd, result);
-
-    return result;
+    await readHeaderPayload(cmp);
+    return meta;
 }
 
-export async function readHeaderPayload(fd: FileHandle, result: OpenFileResult) {
-    const { payloadLength, payloadOffset } = result;
+export async function readHeaderPayload(cmp: BinManager) {
+    const { fd, meta } = cmp;
+    const { payloadLength, payloadOffset } = meta;
 
     const payloadBuf = Buffer.alloc(payloadLength);
     const { bytesRead } = await fd.read(payloadBuf, 0, payloadLength, HEADER_SIZE + payloadOffset);
@@ -107,33 +106,34 @@ export async function readHeaderPayload(fd: FileHandle, result: OpenFileResult) 
         throw new Error(`Incomplete payload header read: expected ${payloadLength} bytes, got ${bytesRead}`);
     }
 
-    const obj = await decodeData(payloadBuf) as {
+    const obj = await cmp.options.format.decode(payloadBuf) as {
         c: [string, number, number][];
         f: [number, number][];
     };
 
-    result.collections = (obj.c || []).map(([name, offset, capacity]) => ({ name, offset, capacity }));
-    result.freeList = (obj.f || []).map(([offset, capacity]) => ({ offset, capacity }));
+    meta.collections = (obj.c || []).map(([name, offset, capacity]) => ({ name, offset, capacity }));
+    meta.freeList = (obj.f || []).map(([offset, capacity]) => ({ offset, capacity }));
 
-    await _log(6, "Collections and freeList loaded", result);
+    await _log(6, "Collections and freeList loaded", meta);
 }
 
-export function getHeaderPayload(result: OpenFileResult) {
+export function getHeaderPayload(meta: FileMeta) {
     return {
-        c: result.collections.map(({ name, offset, capacity }) => ([name, offset, capacity])),
-        f: result.freeList.map(({ offset, capacity }) => [offset, capacity]),
+        c: meta.collections.map(({ name, offset, capacity }) => ([name, offset, capacity])),
+        f: meta.freeList.map(({ offset, capacity }) => [offset, capacity]),
     };
 }
 
-export async function saveHeaderAndPayload(fd: FileHandle, result: OpenFileResult, recursion = false) {
+export async function saveHeaderAndPayload(cmp: BinManager, recursion = false) {
+    const { fd, meta, options } = cmp;
     if (!fd) throw new Error("File not open");
 
-    const { collections, freeList, fileSize } = result;
+    const { collections, freeList, fileSize } = meta;
     await _log(6, "Saving header payload:", collections, freeList);
 
-    const payloadObj = getHeaderPayload(result);
+    const payloadObj = getHeaderPayload(meta);
 
-    const payloadBuf = Buffer.from(await encodeData(payloadObj));
+    const payloadBuf = Buffer.from(await cmp.options.format.encode(payloadObj));
     if (payloadBuf.length > 64 * 1024) {
         console.error("Header payload too large");
         throw new Error("Header payload too large");
@@ -144,11 +144,11 @@ export async function saveHeaderAndPayload(fd: FileHandle, result: OpenFileResul
     const headerBuf = Buffer.alloc(HEADER_SIZE);
     headerBuf.writeUInt32LE(VERSION, 0);
     headerBuf.writeUInt32LE(payloadBuf.length, 4);
-    headerBuf.writeUInt32LE(result.payloadOffset, 8);
-    headerBuf.writeUInt32LE(result.blockSize, 12);
-    result.payloadLength = payloadBuf.length;
+    headerBuf.writeUInt32LE(meta.payloadOffset, 8);
+    headerBuf.writeUInt32LE(meta.blockSize, 12);
+    meta.payloadLength = payloadBuf.length;
 
-    if (result.options.crc) {
+    if (options.crc) {
         const { computedCrc: crc } = await getFileCrc(fd);
         headerBuf.writeUInt32LE(crc, 16);
     }
@@ -158,26 +158,26 @@ export async function saveHeaderAndPayload(fd: FileHandle, result: OpenFileResul
     // Write header
     await fd.write(headerBuf, 0, HEADER_SIZE, 0);
     // Write payload
-    const roundPayload = roundUpCapacity(result, payloadBuf.length);
+    const roundPayload = roundUpCapacity(meta, payloadBuf.length);
 
-    if (detectCollisions(result, HEADER_SIZE + result.payloadOffset, roundPayload)) {
+    if (detectCollisions(meta, HEADER_SIZE + meta.payloadOffset, roundPayload)) {
         await _log(2, "Collision detected");
-        const slot = !recursion && await findFreeSlot(result, roundPayload);
+        const slot = !recursion && await findFreeSlot(cmp, roundPayload);
         if (slot) {
-            result.payloadOffset = slot.offset - HEADER_SIZE;
+            meta.payloadOffset = slot.offset - HEADER_SIZE;
         } else {
-            result.payloadOffset = result.fileSize - HEADER_SIZE;
-            result.fileSize += roundPayload;
+            meta.payloadOffset = meta.fileSize - HEADER_SIZE;
+            meta.fileSize += roundPayload;
         }
-        pushToFreeList(result, result.payloadOffset, roundPayload);
+        pushToFreeList(meta, meta.payloadOffset, roundPayload);
 
-        return await saveHeaderAndPayload(fd, result, true);
+        return await saveHeaderAndPayload(cmp, true);
     }
 
-    await writeData(fd, HEADER_SIZE + result.payloadOffset, payloadBuf, roundPayload);
+    await writeData(fd, HEADER_SIZE + meta.payloadOffset, payloadBuf, roundPayload);
 
     await _log(6, "Payload written");
 
     // Update file size if header + payload bigger
-    result.fileSize = Math.max(fileSize, HEADER_SIZE + roundPayload);
+    meta.fileSize = Math.max(fileSize, HEADER_SIZE + roundPayload);
 }

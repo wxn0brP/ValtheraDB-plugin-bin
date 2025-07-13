@@ -3,10 +3,11 @@ import { BinManager } from ".";
 import { saveHeaderAndPayload } from "./head";
 import { HEADER_SIZE } from "./static";
 import { readData, roundUpCapacity, writeData } from "./utils";
+import { _log } from "../log";
 
 export async function optimize(cmp: BinManager) {
     await _log(3, "Starting database optimization");
-    const collections = cmp.openResult.collections;
+    const collections = cmp.meta.collections;
 
     const allData = new Map<string, Buffer>();
     for (const { name, offset } of collections) {
@@ -24,15 +25,15 @@ export async function optimize(cmp: BinManager) {
     await _log(5, "Re-opening database file for optimization");
     await cmp.open();
 
-    let offset = roundUpCapacity(cmp.openResult, cmp.openResult.payloadLength + HEADER_SIZE) + cmp.openResult.blockSize;
+    let offset = roundUpCapacity(cmp.meta, cmp.meta.payloadLength + HEADER_SIZE) + cmp.meta.blockSize;
     for (const [collection, data] of allData) {
         await _log(6, "Writing optimized collection:", collection);
-        const len = roundUpCapacity(cmp.openResult, data.length + 4);
+        const len = roundUpCapacity(cmp.meta, data.length + 4);
         const buf = Buffer.alloc(4);
         buf.writeInt32LE(data.length, 0);
         await writeData(cmp.fd, offset, buf, 4);
         await writeData(cmp.fd, offset + 4, data, len);
-        cmp.openResult.collections.push({
+        cmp.meta.collections.push({
             name: collection,
             offset,
             capacity: len
@@ -40,6 +41,6 @@ export async function optimize(cmp: BinManager) {
         offset += len;
     }
 
-    await saveHeaderAndPayload(cmp.fd, cmp.openResult);
+    await saveHeaderAndPayload(cmp);
     await _log(3, "Database optimization complete");
 }

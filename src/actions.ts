@@ -36,7 +36,7 @@ export class BinFileAction extends dbActionBase {
      * Get a list of available databases in the specified folder.
      */
     async getCollections() {
-        const collections = this.mgr.openResult.collections.map(c => c.name);
+        const collections = this.mgr.meta.collections.map(c => c.name);
         return collections;
     }
 

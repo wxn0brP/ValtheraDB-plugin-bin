@@ -1,9 +1,6 @@
-declare var _log: (level: number, ...data: any[]) => Promise<void>;
-
 const dir = process.cwd() + "/";
-global.__wait = 0;
-global._log = async function (level: number, ...data: any[]) {
-    const logLevel = parseInt(process.env.LOG_LEVEL || '0', 10);
+export async function _log(level: number, ...data: any[]) {
+    const logLevel = parseInt(process.env.VDB_BIN_LOG_LEVEL || '0', 10);
     if (logLevel < level) return;
 
     let line = new Error().stack.split('\n')[3].trim();
@@ -13,5 +10,4 @@ global._log = async function (level: number, ...data: any[]) {
     if (path.length < 2) path = line.replace(dir, "").replace("at ", ""); // if path is 2 (callback):
 
     console.log(`[${level}] ` + "\x1b[36m" + path + ":", "\x1b[33m" + at + "\x1b[0m", ...data);
-    if (global.__wait) await new Promise(resolve => setTimeout(resolve, global.__wait));
 }

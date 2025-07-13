@@ -1,9 +1,11 @@
-import { access, FileHandle, constants, open } from "fs/promises";
+import * as msgpack from "@msgpack/msgpack";
+import { access, constants, FileHandle, open } from "fs/promises";
+import { getFileCrc } from "../crc32";
+import { _log } from "../log";
 import { readLogic, writeLogic } from "./data";
-import { openFile, OpenFileResult } from "./head";
+import { FileMeta, openFile } from "./head";
 import { optimize } from "./optimize";
 import { removeCollection } from "./rm";
-import { getFileCrc } from "../crc32";
 
 async function safeOpen(path: string) {
     try {
@@ -30,11 +32,15 @@ export interface Options {
      */
     crc: number;
     overwriteRemovedCollection: boolean;
+    format: {
+        encode(data: any): Promise<Uint8Array | Buffer>;
+        decode(data: Buffer): Promise<any>;
+    }
 }
 
 export class BinManager {
     public fd: null | FileHandle = null;
-    public openResult: OpenFileResult;
+    public meta: FileMeta;
     public options: Options;
 
     /**
@@ -51,15 +57,19 @@ export class BinManager {
             preferredSize: 512,
             crc: 2,
             overwriteRemovedCollection: false,
+            format: {
+                encode: async (data: any) => msgpack.encode(data),
+                decode: async (data: Buffer) => msgpack.decode(data)
+            },
             ...options
         }
-        
+
         if (!this.options.preferredSize || this.options.preferredSize <= 0) throw new Error("Preferred size not provided");
     }
 
     async open() {
         this.fd = await safeOpen(this.path);
-        this.openResult = await openFile(this.fd, this.options);
+        await openFile(this);
     }
 
     async close() {
@@ -79,12 +89,12 @@ export class BinManager {
 
     async write(collection: string, data: object[]) {
         if (!this.fd) throw new Error("File not open");
-        await writeLogic(this.fd, this.openResult, collection, data);
+        await writeLogic(this, collection, data);
     }
 
     async read(collection: string) {
         if (!this.fd) throw new Error("File not open");
-        return await readLogic(this.fd, this.openResult, collection);
+        return await readLogic(this, collection);
     }
 
     async optimize() {
@@ -94,6 +104,6 @@ export class BinManager {
 
     async removeCollection(collection: string) {
         if (!this.fd) throw new Error("File not open");
-        await removeCollection(this.fd, this.openResult, collection);
+        await removeCollection(this, collection);
     }
 }

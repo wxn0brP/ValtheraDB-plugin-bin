@@ -1,28 +1,30 @@
-import { FileHandle } from "fs/promises";
-import { OpenFileResult, saveHeaderAndPayload } from "./head";
+import { saveHeaderAndPayload } from "./head";
 import { findCollection } from "./data";
 import { writeData } from "./utils";
+import { BinManager } from ".";
 
-export async function removeCollection(fd: FileHandle, result: OpenFileResult, collection: string) {
-    const collectionMeta = findCollection(result, collection);
+export async function removeCollection(cmp: BinManager, collection: string) {
+    const { meta, fd, options } = cmp;
+    const collectionMeta = findCollection(cmp, collection);
     if (!collectionMeta) throw new Error("Collection not found");
 
-    if (result.options.overwriteRemovedCollection) {
-        await writeData(fd, collectionMeta.offset, Buffer.alloc(collectionMeta.capacity), collectionMeta.capacity);
-    }
-
-    if (result.collections.length === 1) {
-        result.collections = [];
-        result.freeList = [];
+    if (meta.collections.length === 1) {
+        meta.collections = [];
+        meta.freeList = [];
         await fd.truncate(0);
-        await saveHeaderAndPayload(fd, result);
+        await saveHeaderAndPayload(cmp);
         return;
     }
 
-    result.collections.splice(result.collections.findIndex(c => c.name === collection), 1);
-    result.freeList.push({
+    meta.collections.splice(meta.collections.findIndex(c => c.name === collection), 1);
+    meta.freeList.push({
         offset: collectionMeta.offset,
         capacity: collectionMeta.capacity
     });
-    await saveHeaderAndPayload(fd, result);
+
+    if (options.overwriteRemovedCollection) {
+        await writeData(fd, collectionMeta.offset, Buffer.alloc(collectionMeta.capacity), collectionMeta.capacity);
+    }
+
+    await saveHeaderAndPayload(cmp);
 }

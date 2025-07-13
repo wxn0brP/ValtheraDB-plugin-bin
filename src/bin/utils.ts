@@ -1,7 +1,8 @@
 import { FileHandle } from "fs/promises";
-import { Block, OpenFileResult } from "./head";
+import { Block, FileMeta } from "./head";
+import { _log } from "../log";
 
-export function roundUpCapacity(result: OpenFileResult, size: number) {
+export function roundUpCapacity(result: FileMeta, size: number) {
     return Math.ceil(size / result.blockSize) * result.blockSize;
 }
 
@@ -70,7 +71,7 @@ function checkCollection(start1: number, end1: number, start2: number, end2: num
     return start1 < end2 && start2 < end1;
 }
 
-export function detectCollisions(result: OpenFileResult, start: number, size: number, skip: string[] = []) {
+export function detectCollisions(result: FileMeta, start: number, size: number, skip: string[] = []) {
     for (const { name, offset, capacity } of result.collections) {
         if (skip.includes(name)) continue;
         if (checkCollection(offset, offset + capacity, start, start + size)) 
@@ -80,7 +81,7 @@ export function detectCollisions(result: OpenFileResult, start: number, size: nu
     return false;
 }
 
-export function pushToFreeList(result: OpenFileResult, offset: number, len: number) {
+export function pushToFreeList(result: FileMeta, offset: number, len: number) {
     result.freeList.push({
         offset,
         capacity: roundUpCapacity(result, len),
