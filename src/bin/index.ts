@@ -29,6 +29,7 @@ export interface Options {
      * 2 - throw if error
      */
     crc: number;
+    overwriteRemovedCollection: boolean;
 }
 
 export class BinManager {
@@ -39,7 +40,7 @@ export class BinManager {
     /**
      * Constructs a new BinManager instance.
      * @param path - File path.
-     * @param [preferredSize=256] - The preferred block size for the database. Must be a positive number (preferredSize > 0)
+     * @param [preferredSize=512] - The preferred block size for the database. Must be a positive number (preferredSize > 0)
      * @throws If the path is not provided, or the preferred size is
      * not a positive number.
      */
@@ -47,8 +48,9 @@ export class BinManager {
         if (!path) throw new Error("Path not provided");
 
         this.options = {
-            preferredSize: 256,
+            preferredSize: 512,
             crc: 2,
+            overwriteRemovedCollection: false,
             ...options
         }
         

@@ -108,11 +108,11 @@ export async function readHeaderPayload(fd: FileHandle, result: OpenFileResult) 
     }
 
     const obj = await decodeData(payloadBuf) as {
-        c: [string, number, number, number][];
+        c: [string, number, number][];
         f: [number, number][];
     };
 
-    result.collections = (obj.c || []).map(([name, offset, length, capacity]) => ({ name, offset, length, capacity }));
+    result.collections = (obj.c || []).map(([name, offset, capacity]) => ({ name, offset, capacity }));
     result.freeList = (obj.f || []).map(([offset, capacity]) => ({ offset, capacity }));
 
     await _log(6, "Collections and freeList loaded", result);
@@ -152,8 +152,6 @@ export async function saveHeaderAndPayload(fd: FileHandle, result: OpenFileResul
         const { computedCrc: crc } = await getFileCrc(fd);
         headerBuf.writeUInt32LE(crc, 16);
     }
-
-    // TODO add magic, flags, etc. here
 
     await _log(6, "Writing header:", headerBuf.toString("hex"));
 
