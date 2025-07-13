@@ -33,7 +33,7 @@ export interface Options {
     crc: number;
     overwriteRemovedCollection: boolean;
     format: {
-        encode(data: any): Promise<Uint8Array | Buffer>;
+        encode(data: any): Promise<Parameters<typeof Buffer.from>[0]>;
         decode(data: Buffer): Promise<any>;
     }
 }
