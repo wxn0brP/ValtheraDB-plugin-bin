@@ -67,7 +67,7 @@ export async function writeLogic(cmp: BinManager, collection: string, data: obje
     }
 
     const buf = Buffer.alloc(4);
-    buf.writeInt32LE(length, 0);
+    buf.writeUInt32LE(length, 0);
     await writeData(fd, offset, buf, 4);
     await writeData(fd, offset + 4, encoded, capacity);
 
@@ -86,6 +86,6 @@ export async function readLogic(cmp: BinManager, collection: string) {
     if (!collectionMeta) throw new Error("Collection not found");
 
     const len = await readData(cmp.fd, collectionMeta.offset, 4);
-    const data = await readData(cmp.fd, collectionMeta.offset + 4, len.readInt32LE(0));
+    const data = await readData(cmp.fd, collectionMeta.offset + 4, len.readUInt32LE(0));
     return await cmp.options.format.decode(data);
 }
